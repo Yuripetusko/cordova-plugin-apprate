@@ -187,7 +187,7 @@ AppRate = (function() {
     ) {
       /* If on ios and inAppReview is set to true, just show star rating */
       if (
-        this.preferences.inAppReview &&
+        AppRate.preferences.inAppReview &&
         /(iPhone|iPod|iPad)/i.test(navigator.userAgent.toLowerCase())
       ) {
         updateiOSRatingData();
@@ -198,7 +198,7 @@ AppRate = (function() {
           }
         }
         exec(null, null, "AppRate", "launchiOSReview", [
-          this.preferences.storeAppURL.ios,
+          AppRate.preferences.storeAppURL.ios,
           showNativePrompt,
         ]);
       } else {
