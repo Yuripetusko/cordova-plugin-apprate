@@ -138,11 +138,11 @@ AppRate = (function () {
         if (counter.countdown === AppRate.preferences.usesUntilPrompt || immediately) {
             /* If on ios and inAppReview is set to true, just show star rating */
             if (
-                this.preferences.inAppReview &&
+                AppRate.preferences.inAppReview &&
                 /(iPhone|iPod|iPad)/i.test(navigator.userAgent.toLowerCase())
             ) {
                 var showNativePrompt = true;
-                exec(null, null, 'AppRate', 'launchiOSReview', [this.preferences.storeAppURL.ios, showNativePrompt]);
+                exec(null, null, 'AppRate', 'launchiOSReview', [AppRate.preferences.storeAppURL.ios, showNativePrompt]);
             } else {
                 localeObj = Locales.getLocale(AppRate.preferences.useLanguage, AppRate.preferences.displayAppName, AppRate.preferences.customLocale);
 
