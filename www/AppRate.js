@@ -21,26 +21,25 @@
 var AppRate,
     Locales,
     localeObj,
-    exec;
+    exec,
+    Storage;
 
 Locales = require('./locales');
 
 exec = require('cordova/exec');
 
+Storage = require('./storage')
+
 AppRate = (function () {
     var FLAG_NATIVE_CODE_SUPPORTED,
         LOCAL_STORAGE_COUNTER,
-        PREF_STORE_URL_FORMAT_IOS,
         counter,
         getAppTitle,
         getAppVersion,
-        localStorageParam,
-        promptForRatingWindowButtonClickHandler,
         showDialog,
         updateCounter;
 
-    function AppRate() {
-    }
+    function AppRate() {}
 
     LOCAL_STORAGE_COUNTER = 'counter';
     LOCAL_STORAGE_IOS_RATING = 'iosRating';
@@ -58,11 +57,6 @@ AppRate = (function () {
     counter = {
         applicationVersion: void 0,
         countdown: 0,
-    };
-
-    var iOSRating = {
-        timesPrompted: 0,
-        lastPromptDate: null,
     };
 
     promptForAppRatingWindowButtonClickHandler = function (buttonIndex) {
@@ -97,6 +91,7 @@ AppRate = (function () {
                 );
                 break;
         }
+
         return typeof base.onButtonClicked === 'function'
             ? base.onButtonClicked(buttonIndex, currentBtn, 'AppRatingPrompt')
             : function () {
@@ -170,23 +165,12 @@ AppRate = (function () {
             case 'stop':
                 counter.countdown = AppRate.preferences.usesUntilPrompt + 1;
         }
-        localStorageParam(LOCAL_STORAGE_COUNTER, JSON.stringify(counter));
+        Storage.set(LOCAL_STORAGE_COUNTER, counter);
         return counter;
     };
 
-    updateiOSRatingData = function () {
-        if (checkIfDateIsAfter(iOSRating.lastPromptDate, 365)) {
-            iOSRating.timesPrompted = 0;
-        }
-
-        iOSRating.timesPrompted++;
-        iOSRating.lastPromptDate = new Date();
-
-        localStorageParam(LOCAL_STORAGE_IOS_RATING, JSON.stringify(iOSRating));
-    };
-
     showDialog = function (immediately) {
-        var base = AppRate.preferences.callbacks;
+        updateCounter();
         if (
             counter.countdown === AppRate.preferences.usesUntilPrompt ||
             immediately
@@ -233,35 +217,13 @@ AppRate = (function () {
                         [localeObj.noButtonLabel, localeObj.yesButtonLabel]
                     );
                 }
-
+                var base = AppRate.preferences.callbacks;
                 if (typeof base.onRateDialogShow === 'function') {
                     base.onRateDialogShow(promptForStoreRatingWindowButtonClickHandler);
                 }
             }
         }
         return AppRate;
-    };
-
-    localStorageParam = function (itemName, itemValue, action) {
-        if (itemValue == null) {
-            itemValue = null;
-        }
-        if (action == null) {
-            action = false;
-        }
-        if (itemValue !== null) {
-            action = true;
-        }
-        switch (action) {
-            case true:
-                localStorage.setItem(itemName, itemValue);
-                break;
-            case false:
-                return localStorage.getItem(itemName);
-            case null:
-                localStorage.removeItem(itemName);
-        }
-        return this;
     };
 
     getAppVersion = function (successCallback, errorCallback) {
@@ -282,19 +244,12 @@ AppRate = (function () {
         return AppRate;
     };
 
-    AppRate.init = function () {
-        if (localStorageParam(LOCAL_STORAGE_COUNTER)) {
-            counter = JSON.parse(localStorageParam(LOCAL_STORAGE_COUNTER)) || counter;
-        }
-
-        if (localStorageParam(LOCAL_STORAGE_IOS_RATING)) {
-            iOSRating =
-                JSON.parse(localStorageParam(LOCAL_STORAGE_IOS_RATING)) || iOSRating;
-
-            if (iOSRating.lastPromptDate) {
-                iOSRating.lastPromptDate = new Date(iOSRating.lastPromptDate);
-            }
-        }
+  AppRate.init = function() {
+    AppRate.ready = Promise.all([
+      Storage.get(LOCAL_STORAGE_COUNTER).then(function (storedCounter) {
+        counter = storedCounter || counter
+      })
+    ])
 
         getAppVersion(
             (function (_this) {
@@ -349,100 +304,99 @@ AppRate = (function () {
         if (immediately == null) {
             immediately = true;
         }
-        if (this.preferences.useLanguage === null) {
-            navigator.globalization.getPreferredLanguage(
-                (function (_this) {
-                    return function (language) {
-                        _this.preferences.useLanguage = language.value;
-                        return showDialog(immediately);
-                    };
-                })(this)
-            );
+        return _this;
+      };
+    })(this));
+    getAppTitle((function(_this) {
+      return function(displayAppName) {
+        _this.preferences.displayAppName = displayAppName;
+        return _this;
+      };
+    })(this));
+    return this;
+  };
+
+  AppRate.locales = Locales;
+
+  AppRate.preferences = {
+    useLanguage: null,
+    displayAppName: '',
+    simpleMode: false,
+    promptAgainForEachNewVersion: true,
+    usesUntilPrompt: 3,
+    inAppReview: true,
+    callbacks: {
+      onButtonClicked: null,
+      onRateDialogShow: null,
+      handleNegativeFeedback: null,
+      done: null
+    },
+    storeAppURL: {
+      ios: null,
+      android: null,
+      blackberry: null,
+      windows8: null,
+      windows: null
+    },
+    customLocale: null,
+    openUrl: function (url) {
+        cordova.InAppBrowser.open(url, '_system', 'location=no');
+    }
+  };
+
+  AppRate.promptForRating = function(immediately) {
+    AppRate.ready.then(function() {
+      if (immediately == null) {
+        immediately = true;
+      }
+
+      // see also: https://cordova.apache.org/news/2017/11/20/migrate-from-cordova-globalization-plugin.html
+      if (AppRate.preferences.useLanguage === null && window.Intl && typeof window.Intl === 'object') {
+        AppRate.preferences.useLanguage = window.navigator.language;
+      }
+
+      showDialog(immediately);
+    });
+    return this;
+  };
+
+  AppRate.navigateToAppStore = function() {
+    var iOSVersion;
+    var iOSStoreUrl;
+
+    if (/(iPhone|iPod|iPad)/i.test(navigator.userAgent.toLowerCase())) {
+      if (this.preferences.inAppReview) {
+        var showNativePrompt = true;
+        exec(null, null, 'AppRate', 'launchiOSReview', [this.preferences.storeAppURL.ios, showNativePrompt]);
+      } else {
+        iOSVersion = navigator.userAgent.match(/OS\s+([\d\_]+)/i)[0].replace(/_/g, '.').replace('OS ', '').split('.');
+        iOSVersion = parseInt(iOSVersion[0]) + (parseInt(iOSVersion[1]) || 0) / 10;
+        if (iOSVersion < 9) {
+          iOSStoreUrl = PREF_STORE_URL_FORMAT_IOS8 + this.preferences.storeAppURL.ios;
         } else {
             showDialog(immediately);
         }
-        updateCounter();
-        return this;
-    };
+	AppRate.preferences.openUrl(iOSStoreUrl);
+      }
+    } else if (/(Android)/i.test(navigator.userAgent.toLowerCase())) {
+      AppRate.preferences.openUrl(this.preferences.storeAppURL.android);
+    } else if (/(Windows|Edge)/i.test(navigator.userAgent.toLowerCase())) {
+	  Windows.Services.Store.StoreRequestHelper.sendRequestAsync(Windows.Services.Store.StoreContext.getDefault(), 16, "");
+    } else if (/(BlackBerry)/i.test(navigator.userAgent.toLowerCase())) {
+      AppRate.preferences.openUrl(this.preferences.storeAppURL.blackberry);
+    } else if (/(IEMobile|Windows Phone)/i.test(navigator.userAgent.toLowerCase())) {
+      AppRate.preferences.openUrl(this.preferences.storeAppURL.windows8);
+    }
+    return this;
+  };
 
-    AppRate.navigateToAppStore = function () {
-        var iOSVersion;
-        var iOSStoreUrl;
-
-        if (/(iPhone|iPod|iPad)/i.test(navigator.userAgent.toLowerCase())) {
-            if (this.preferences.inAppReview) {
-                updateiOSRatingData();
-                var showNativePrompt = iOSRating.timesPrompted < 3;
-                exec(null, null, 'AppRate', 'launchiOSReview', [
-                    this.preferences.storeAppURL.ios,
-                    showNativePrompt,
-                ]);
-            } else {
-                iOSVersion = navigator.userAgent
-                    .match(/OS\s+([\d\_]+)/i)[0]
-                    .replace(/_/g, '.')
-                    .replace('OS ', '')
-                    .split('.');
-                iOSVersion =
-                    parseInt(iOSVersion[0]) + (parseInt(iOSVersion[1]) || 0) / 10;
-                if (iOSVersion < 9) {
-                    iOSStoreUrl =
-                        PREF_STORE_URL_FORMAT_IOS8 + this.preferences.storeAppURL.ios;
-                } else {
-                    iOSStoreUrl =
-                        PREF_STORE_URL_PREFIX_IOS9 +
-                        this.preferences.storeAppURL.ios +
-                        PREF_STORE_URL_POSTFIX_IOS9;
-                }
-                cordova.InAppBrowser.open(iOSStoreUrl, '_system', 'location=no');
-            }
-        } else if (/(Android)/i.test(navigator.userAgent.toLowerCase())) {
-            cordova.InAppBrowser.open(
-                this.preferences.storeAppURL.android,
-                '_system',
-                'location=no'
-            );
-        } else if (/(Windows|Edge)/i.test(navigator.userAgent.toLowerCase())) {
-            cordova.InAppBrowser.open(
-                this.preferences.storeAppURL.windows,
-                '_blank',
-                'location=no'
-            );
-        } else if (/(BlackBerry)/i.test(navigator.userAgent.toLowerCase())) {
-            cordova.InAppBrowser.open(
-                this.preferences.storeAppURL.blackberry,
-                '_system',
-                'location=no'
-            );
-        } else if (
-            /(IEMobile|Windows Phone)/i.test(navigator.userAgent.toLowerCase())
-        ) {
-            cordova.InAppBrowser.open(
-                this.preferences.storeAppURL.windows8,
-                '_system',
-                'location=no'
-            );
-        }
-        return this;
-    };
+  return AppRate;
 
     return AppRate;
 })();
 
-AppRate.init();
-
-function checkIfDateIsAfter(date, minimumDifference) {
-    if (!date) {
-        return false;
-    }
-
-    const dateTimestamp = date.getTime();
-    const todayTimestamp = new Date().getTime();
-    const differenceInDays = Math.abs(
-        (todayTimestamp - dateTimestamp) / (3600 * 24 * 1000)
-    );
-
-    return differenceInDays > minimumDifference;
-}
+document.addEventListener("deviceready", function() {
+  AppRate.init();
+}, false)
 
 module.exports = AppRate;
