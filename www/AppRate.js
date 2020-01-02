@@ -142,11 +142,11 @@ AppRate = (function () {
                 /(iPhone|iPod|iPad)/i.test(navigator.userAgent.toLowerCase())
             ) {
                 var showNativePrompt = true;
-                exec(null, null, 'AppRate', 'launchiOSReview', [AppRate.preferences.storeAppURL.ios, showNativePrompt]);
                 var base = AppRate.preferences.callbacks;
                 if (typeof base.onRateDialogShow === 'function') {
                     base.onRateDialogShow(promptForStoreRatingWindowButtonClickHandler);
                 }
+                exec(null, null, 'AppRate', 'launchiOSReview', [AppRate.preferences.storeAppURL.ios, showNativePrompt]);
             } else {
                 localeObj = Locales.getLocale(AppRate.preferences.useLanguage, AppRate.preferences.displayAppName, AppRate.preferences.customLocale);
 
